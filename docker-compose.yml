@@ -1,0 +1,80 @@
+
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: telco_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - telco_network
+
+  flask-app:
+    build: .
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    ports:
+      - "5001:5001"
+    networks:
+      - telco_network
+    volumes:
+      - ./output:/tmp
+
+  webserver:
+    image: apache/airflow:2.7.1
+    command: bash -c "airflow db init && airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com && airflow webserver"
+    
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/telco_db
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW_CORE_LOAD_EXAMPLES: 'false'
+      AIRFLOW__WEBSERVER__SESSION_COOKIE_NAME:  session_airflow
+      AIRFLOW__WEBSERVER__SESSION_COOKIE_PATH: /airflow
+      PYTHONPATH: /opt/airflow/dags
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    networks:
+      - telco_network
+
+  scheduler:
+    image: apache/airflow:2.7.1
+    command: bash -c "airflow db init && airflow scheduler"
+    restart: always
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/telco_db
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      PYTHONPATH: /opt/airflow/dags
+    depends_on:
+      - postgres
+      - webserver
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs  
+      - ./plugins:/opt/airflow/plugins
+    networks:
+      - telco_network
+
+networks:
+  telco_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+      driver: local
